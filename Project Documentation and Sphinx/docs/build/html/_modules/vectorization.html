@@ -1,0 +1,198 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vectorization &#8212; Dedoublement PoC documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/classic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+    
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <link rel="shortcut icon" href="../_static/documentation-icon.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">vectorization</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for vectorization</h1><div class="highlight"><pre>
+<span></span><span class="n">REP_PROJET</span> <span class="o">=</span> <span class="s1">&#39;/gdrive/My Drive/Colab Notebooks/Dedoublement/&#39;</span>
+<span class="n">REP_INTERMED</span>  <span class="o">=</span> <span class="n">REP_PROJET</span> <span class="o">+</span> <span class="s1">&#39;Intermed/&#39;</span>
+
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">from</span> <span class="nn">sklearn.feature_extraction.text</span> <span class="kn">import</span> <span class="n">TfidfVectorizer</span>
+<span class="kn">from</span> <span class="nn">sklearn.metrics.pairwise</span> <span class="kn">import</span> <span class="n">cosine_similarity</span>
+<span class="kn">from</span> <span class="nn">sklearn.neighbors</span> <span class="kn">import</span> <span class="n">NearestNeighbors</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+
+
+<div class="viewcode-block" id="text_to_vect"><a class="viewcode-back" href="../files/vectorization.html#vectorization.text_to_vect">[docs]</a><span class="k">def</span> <span class="nf">text_to_vect</span><span class="p">(</span><span class="n">source_query</span><span class="p">:</span><span class="nb">str</span><span class="p">,</span> <span class="n">vectorizer</span><span class="p">):</span>
+
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A function to Standarize a string and vectorized it.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        source_query (str) : concatenation of Artist and title.</span>
+<span class="sd">        vectorizer (vect)  : vectorizer of discogs dataset</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">         vector : document-term matrix.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">#normalisation</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">make_text_prep_func</span><span class="p">(</span><span class="n">source_query</span><span class="p">,</span> <span class="n">name_column_blacklist</span><span class="p">,</span> <span class="n">name_column_regex_replace</span><span class="p">)</span>
+
+    <span class="c1">#vectorisation du text</span>
+    <span class="n">vectorized_querie</span> <span class="o">=</span> <span class="n">vectorizer</span><span class="o">.</span><span class="n">transform</span><span class="p">([</span><span class="n">query</span><span class="p">])</span>
+   
+    <span class="k">return</span>  <span class="n">vectorized_querie</span></div>
+    
+
+<div class="viewcode-block" id="create_vectorizer_and_vectorized_db"><a class="viewcode-back" href="../files/vectorization.html#vectorization.create_vectorizer_and_vectorized_db">[docs]</a><span class="k">def</span> <span class="nf">create_vectorizer_and_vectorized_db</span><span class="p">(</span><span class="n">df_items</span><span class="p">,</span> <span class="n">analyzer</span><span class="p">,</span> <span class="n">ngram_range</span><span class="p">):</span>
+
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This function returns the vectorized reference base + the vectorize itself.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        df_items(DataFrame) : Baseline Discogs.</span>
+<span class="sd">        analyzer (str)  : {&#39;word&#39;, &#39;char&#39;, &#39;char_wb&#39;} </span>
+<span class="sd">        ngram_range (tuple) : Range of n-values for different n-grams to be extracted</span>
+<span class="sd">    </span>
+<span class="sd">    Returns:</span>
+<span class="sd">            (matrix, vectorizer) :  Save/write to pickle the method of vectorization and the X_train</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>       
+    
+
+    <span class="c1">#creation du vectorizer et de la base vectorisÃ©e</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;**** creation du vectorizer&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">analyzer</span> <span class="o">==</span> <span class="s1">&#39;word&#39;</span> <span class="p">:</span>
+      <span class="n">vectorizer</span> <span class="o">=</span> <span class="n">TfidfVectorizer</span><span class="p">(</span><span class="n">analyzer</span> <span class="o">=</span> <span class="s1">&#39;word&#39;</span><span class="p">,</span> <span class="n">use_idf</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+      <span class="n">X_train</span> <span class="o">=</span> <span class="n">vectorizer</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">([</span> <span class="n">document</span> <span class="k">for</span> <span class="n">document</span> <span class="ow">in</span> <span class="n">df_items</span><span class="p">[</span><span class="s1">&#39;text_CLEAN&#39;</span><span class="p">]</span> <span class="p">])</span>
+      
+    <span class="k">else</span> <span class="p">:</span>
+      <span class="n">vectorizer</span> <span class="o">=</span> <span class="n">TfidfVectorizer</span><span class="p">(</span><span class="n">analyzer</span> <span class="o">=</span> <span class="s1">&#39;char&#39;</span><span class="p">,</span> <span class="n">ngram_range</span><span class="o">=</span><span class="n">ngram_range</span> <span class="p">,</span> <span class="n">use_idf</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+      <span class="n">X_train</span> <span class="o">=</span> <span class="n">vectorizer</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">df_items</span><span class="p">[</span><span class="s1">&#39;text_CLEAN&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">))</span>
+    
+    <span class="c1">#on &quot;exÃ©cute&quot; le vectorizer et en sortie on a une matrice sparse + le vocabulaire associÃ©</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;nb features:&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">vectorizer</span><span class="o">.</span><span class="n">get_feature_names</span><span class="p">()))</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;**** sauvegarde des fichiers en pickle pour la prochaine fois&quot;</span><span class="p">)</span>
+    <span class="n">suffix_gram</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[(,)]&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">ngram_range</span><span class="p">))</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">,</span><span class="s1">&#39;_&#39;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="n">analyzer</span> <span class="o">+</span> <span class="s1">&#39;_&#39;</span> <span class="o">+</span> <span class="n">suffix_gram</span><span class="o">+</span> <span class="s1">&#39;_Xtrain.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span>  <span class="n">f1</span> <span class="p">:</span>
+      <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">f1</span><span class="p">)</span> 
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="n">analyzer</span> <span class="o">+</span> <span class="s1">&#39;_&#39;</span><span class="o">+</span>  <span class="n">suffix_gram</span><span class="o">+</span> <span class="s1">&#39;_vectorizer.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f2</span> <span class="p">:</span>
+      <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">vectorizer</span><span class="p">,</span> <span class="n">f2</span><span class="p">)</span> </div>
+      
+
+<div class="viewcode-block" id="reload_data_and_vectorizer"><a class="viewcode-back" href="../files/vectorization.html#vectorization.reload_data_and_vectorizer">[docs]</a><span class="k">def</span> <span class="nf">reload_data_and_vectorizer</span><span class="p">(</span><span class="n">analyzer</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ngram_range</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="p">:</span>
+
+  <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  This function to import the pickles (vectorizer and the matrix Sparse of the documents).</span>
+<span class="sd">    </span>
+<span class="sd">  Args:</span>
+<span class="sd">        df_items(DataFrame) : Baseline Discogs.</span>
+<span class="sd">        analyzer (str)  : {&#39;word&#39;, &#39;char&#39;, &#39;char_wb&#39;} </span>
+<span class="sd">        ngram_range (tupe) : Rrange of n-values for different n-grams to be extracted</span>
+<span class="sd">    </span>
+<span class="sd">  Returns:</span>
+<span class="sd">          pickle: (matrix, vectorizer)</span>
+
+<span class="sd">  &quot;&quot;&quot;</span>     
+
+
+  <span class="k">if</span> <span class="n">analyzer</span><span class="o">==</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ngram_range</span><span class="o">==</span><span class="kc">None</span> <span class="p">:</span>
+    
+     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="s1">&#39;Xtrain.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+         <span class="n">X_train</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    
+     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="s1">&#39;vectorizer.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+         <span class="n">vectorizer</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+  <span class="k">else</span> <span class="p">:</span>
+
+      <span class="n">suffix_gram</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[(,)]&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">ngram_range</span><span class="p">))</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">,</span><span class="s1">&#39;_&#39;</span><span class="p">)</span>
+
+      <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="n">analyzer</span> <span class="o">+</span> <span class="s1">&#39;_&#39;</span> <span class="o">+</span> <span class="n">suffix_gram</span><span class="o">+</span> <span class="s1">&#39;_Xtrain.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+         <span class="n">X_train</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    
+      <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="n">analyzer</span> <span class="o">+</span> <span class="s1">&#39;_&#39;</span> <span class="o">+</span> <span class="n">suffix_gram</span><span class="o">+</span> <span class="s1">&#39;_vectorizer.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+         <span class="n">vectorizer</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>        
+        
+  <span class="k">return</span>  <span class="n">X_train</span><span class="p">,</span> <span class="n">vectorizer</span></div>
+
+
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/cdandlp_logo.png" alt="Logo"/>
+            </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">vectorization</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Erwan BARGAIN, Salif SAWADOGO.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.2.0.
+    </div>
+  </body>
+</html>

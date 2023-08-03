@@ -1,0 +1,7 @@
+autodocsumm  
+docstr-coverage  
+myst_parser  
+nbsphinx  
+pandoc  
+sphinx
+sphinxcontrib-napoleon  

@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>functions_knn &#8212; Dedoublement PoC documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/classic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+    
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <link rel="shortcut icon" href="../_static/documentation-icon.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">functions_knn</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for functions_knn</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">fuzzywuzzy</span> <span class="kn">import</span> <span class="n">fuzz</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">from</span> <span class="nn">sklearn.feature_extraction.text</span> <span class="kn">import</span> <span class="n">TfidfVectorizer</span>
+<span class="kn">from</span> <span class="nn">sklearn.metrics.pairwise</span> <span class="kn">import</span> <span class="n">cosine_similarity</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="c1">#from functions.standardization  import *</span>
+<span class="c1">#from functions.vectorization import *</span>
+
+<span class="n">word_blacklist</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;feat&quot;</span><span class="p">,</span> <span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;featuring&quot;</span><span class="p">,</span> <span class="s2">&quot;et&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span><span class="s2">&quot;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;vs&quot;</span><span class="p">]</span>
+<span class="n">regex_replace</span> <span class="o">=</span> <span class="p">{</span><span class="sa">r</span><span class="s2">&quot;\&#39;&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;\s+&quot;</span><span class="p">:</span> <span class="s2">&quot; &quot;</span><span class="p">}</span>
+
+
+
+<div class="viewcode-block" id="compound_similarity"><a class="viewcode-back" href="../files/functions_knn.html#functions_knn.compound_similarity">[docs]</a><span class="k">def</span> <span class="nf">compound_similarity</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col1</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">col2</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This function computes the a compound list of scores measuring the similarity</span>
+<span class="sd">       between two strings  given one row of dataframe. The scores  are based on the following 6 metrics:</span>
+<span class="sd">         - Damerau-Levenshtein - edit distance that also takes in account transpositions.</span>
+<span class="sd">         - Jaro-Winkler - similarity based on common letters adjusted for the higher likelihood</span>
+<span class="sd">                       spelling to be correct in the beginning of a string.</span>
+<span class="sd">         - Jaccard - like n-grams without taking into account the cardinality (length) of the</span>
+<span class="sd">            n-grams. Effectively, this gives n-gram similarity score for N=1.</span>
+<span class="sd">         - Overlap - measures the &#39;overlap&#39; between two strings based on the number of common</span>
+<span class="sd">                    characters in them.</span>
+<span class="sd">         - Ratcliff-Obershelp - takes into account the length of the fully matching substrings</span>
+<span class="sd">        but also the number of matching characters from substrings that do not match completely.</span>
+<span class="sd">        </span>
+<span class="sd">    Args:</span>
+<span class="sd">      row (DataFrame) : Dataframe to compare both dataframes</span>
+<span class="sd">      col1 (str) : The first column (cleaned artist+ title)</span>
+<span class="sd">      col2 (str) : The second column of strings (cleaned artist+ title)</span>
+<span class="sd">     </span>
+<span class="sd">    Returns:</span>
+<span class="sd">      list(float) :  list of  similarities.  1 means that the two strings match perfectly. If Either of the two strings are</span>
+<span class="sd">        empty, the similarity will be treated as 0.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">s1</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">col1</span><span class="p">]</span>
+    <span class="n">s2</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">col2</span><span class="p">]</span>
+    
+    <span class="k">if</span> <span class="n">s1</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">s1</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">s2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">s2</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">s1</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">s2</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="n">scores</span> <span class="o">=</span> <span class="p">[</span>   <span class="n">Levenshtein</span><span class="o">.</span><span class="n">ratio</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">),</span>
+                 <span class="n">jaro_winkler</span><span class="o">.</span><span class="n">normalized_similarity</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">),</span>
+                 <span class="n">jaccard</span><span class="o">.</span><span class="n">normalized_similarity</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">),</span>
+                 <span class="n">overlap</span><span class="o">.</span><span class="n">normalized_similarity</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">),</span>            
+                 <span class="n">hamming</span><span class="o">.</span><span class="n">normalized_similarity</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">),</span>
+                 <span class="n">fuzz</span><span class="o">.</span><span class="n">partial_ratio</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span><span class="o">/</span><span class="mi">100</span>
+             <span class="p">]</span>
+  
+    <span class="k">return</span> <span class="n">scores</span></div>
+
+<div class="viewcode-block" id="level0_knn_words"><a class="viewcode-back" href="../files/functions_knn.html#functions_knn.level0_knn_words">[docs]</a><span class="k">def</span> <span class="nf">level0_knn_words</span><span class="p">(</span><span class="n">source_query</span><span class="p">,</span> <span class="n">vectorizer</span><span class="p">,</span> <span class="n">X_train</span><span class="p">,</span> <span class="n">baseline</span><span class="p">,</span> <span class="n">sample</span><span class="p">,</span> <span class="n">nb_top</span><span class="p">,</span> <span class="n">indices</span><span class="p">):</span>
+    
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A function to run knn for a single querie after blocking_strategy.</span>
+
+
+<span class="sd">    Args:</span>
+<span class="sd">           </span>
+
+<span class="sd">        source_query (list) : [row number , artist + title ]</span>
+<span class="sd">        vectorizer () : type of vectorization of text </span>
+<span class="sd">        X_train (sparse matrix):   Document-term matrix</span>
+<span class="sd">        baseline (dict) : subset of discogs dataset  after blocking.</span>
+<span class="sd">        sample (DataFrame)   : a row (subset) of cdandlp </span>
+<span class="sd">        nb_top  (int)        : nearest neighbors</span>
+<span class="sd">        indices (list(int)       :  list of indexes  to reduce X_train dimensions</span>
+<span class="sd">           </span>
+<span class="sd">    Returns:</span>
+<span class="sd">           </span>
+<span class="sd">        DataFrame: A table with  informations id_query&#39;, &#39;master_id&#39;, &#39;artist&#39;, &#39;title&#39;, &#39;similarity&#39;,&#39;rank&#39; , </span>
+<span class="sd">                      with others text distances as hamming, levenshtein,...</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+      
+    <span class="c1"># source_query = &#39;Bob Marley Is this love&#39;</span>
+    <span class="k">if</span>  <span class="nb">len</span><span class="p">(</span><span class="n">baseline</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">nb_top</span> <span class="p">:</span>
+        <span class="n">nb_top</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">baseline</span><span class="p">)</span>
+    <span class="n">indice</span> <span class="o">=</span> <span class="n">source_query</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="c1">#normalisation</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">make_text_prep_func</span><span class="p">(</span><span class="n">source_query</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">name_column_blacklist</span><span class="p">,</span> <span class="n">name_column_regex_replace</span><span class="p">)</span>
+    <span class="c1">#vectorisation du text</span>
+    <span class="n">vectorized_querie</span> <span class="o">=</span> <span class="n">vectorizer</span><span class="o">.</span><span class="n">transform</span><span class="p">([</span><span class="n">query</span><span class="p">])</span>
+    <span class="c1"># calcul de la similarité entre la base de ref et la base d&#39;entrée (données tf-idf sur trigrammes)</span>
+    <span class="c1">#on obtient un array</span>
+    <span class="n">mat_sim</span> <span class="o">=</span> <span class="n">cosine_similarity</span><span class="p">(</span><span class="n">X_train</span><span class="p">[</span><span class="n">indices</span><span class="p">],</span> <span class="n">vectorized_querie</span><span class="p">)</span>
+
+    <span class="c1"># fonction pour recuperer celle ayant les similarites élevées </span>
+    <span class="c1">#  np.argsort(x[ind]) retourne les indices du vecteur après rearranagement par ordre croissant</span>
+    <span class="k">def</span> <span class="nf">top_k</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+        <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argpartition</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span> <span class="o">*</span> <span class="n">k</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span> <span class="o">*</span> <span class="n">k</span><span class="p">:]</span>                  
+        <span class="k">return</span> <span class="n">ind</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">ind</span><span class="p">])]</span>                    
+
+    <span class="n">topsim</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">apply_along_axis</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">top_k</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">nb_top</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="n">mat_sim</span><span class="p">)</span>
+    <span class="n">topsim2</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span> <span class="n">topsim</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;index&#39;</span><span class="p">])</span>
+
+    <span class="n">l_sim</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">topsim2</span><span class="p">[</span><span class="s1">&#39;index&#39;</span><span class="p">]):</span>
+        <span class="n">l_sim</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="nb">float</span><span class="p">(</span><span class="n">mat_sim</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="o">*</span><span class="mf">100.0</span> <span class="p">)</span>
+    <span class="n">topsim2</span><span class="p">[</span><span class="s1">&#39;similarity&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">l_sim</span>
+
+
+     
+    <span class="c1">#recupération des infos d&#39;origine</span>
+    <span class="n">df_nearest</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">baseline</span><span class="p">,</span> <span class="n">topsim2</span><span class="p">,</span> <span class="n">on</span> <span class="o">=</span> <span class="s1">&#39;index&#39;</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;inner&#39;</span><span class="p">)</span>
+
+    <span class="n">df_nearest</span><span class="p">[</span><span class="s2">&quot;rank&quot;</span><span class="p">]</span> <span class="o">=</span>  <span class="n">df_nearest</span><span class="p">[</span><span class="s1">&#39;similarity&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">rank</span><span class="p">(</span><span class="n">method</span> <span class="o">=</span><span class="s1">&#39;min&#39;</span><span class="p">,</span><span class="n">ascending</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">df_nearest</span><span class="p">[</span><span class="s1">&#39;id_query&#39;</span><span class="p">]</span> <span class="o">=</span><span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span><span class="s1">&#39;n_ref&#39;</span><span class="p">]</span>
+    <span class="n">df_nearest</span><span class="p">[</span><span class="s1">&#39;text_query&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">make_text_prep_func</span><span class="p">(</span><span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span><span class="s1">&#39;text&#39;</span><span class="p">],</span> <span class="n">word_blacklist</span><span class="p">,</span> <span class="n">regex_replace</span><span class="p">)</span>
+    <span class="n">distances</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;levenshtein&#39;</span><span class="p">,</span> <span class="s1">&#39;jaro_winkler&#39;</span><span class="p">,</span> <span class="s1">&#39;jaccard&#39;</span><span class="p">,</span> <span class="s1">&#39;overlap&#39;</span><span class="p">,</span> <span class="s1">&#39;hamming&#39;</span><span class="p">,</span> <span class="s1">&#39;fuzzy_partial&#39;</span><span class="p">]</span>
+    <span class="n">col_list_values</span> <span class="o">=</span> <span class="n">df_nearest</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span><span class="n">compound_similarity</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;text_CLEAN&quot;</span><span class="p">,</span> <span class="s2">&quot;text_query&quot;</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">df_nearest</span><span class="o">.</span><span class="n">drop</span><span class="p">([</span><span class="s1">&#39;index&#39;</span><span class="p">,</span><span class="s1">&#39;text_query&#39;</span><span class="p">,</span> <span class="s1">&#39;text_CLEAN&#39;</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">df_nearest</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">df_nearest</span><span class="p">[[</span><span class="s1">&#39;id_query&#39;</span><span class="p">,</span> <span class="s1">&#39;master_id&#39;</span><span class="p">,</span> <span class="s1">&#39;artist&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">,</span> <span class="s1">&#39;similarity&#39;</span><span class="p">,</span> <span class="s1">&#39;rank&#39;</span><span class="p">]],</span> 
+                            <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">(</span><span class="n">col_list_values</span><span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">distances</span> <span class="p">)]</span>
+                            <span class="p">,</span><span class="n">axis</span><span class="o">=</span> <span class="mi">1</span> <span class="p">)</span>
+
+    <span class="n">df_nearest</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s1">&#39;similarity&#39;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">new_row</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span>
+                                        <span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span>  <span class="s1">&#39;n_ref&#39;</span><span class="p">],</span>
+                                        <span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span>  <span class="s1">&#39;n_ref&#39;</span><span class="p">],</span> 
+                                        <span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span> <span class="s1">&#39;artiste&#39;</span><span class="p">],</span>
+                                        <span class="n">sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">indice</span><span class="p">,</span> <span class="s1">&#39;titre&#39;</span><span class="p">],</span>
+                                        <span class="nb">float</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+                                        <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,]]),</span> 
+                            <span class="n">columns</span><span class="o">=</span> <span class="p">[</span><span class="s1">&#39;id_query&#39;</span><span class="p">,</span> <span class="s1">&#39;master_id&#39;</span><span class="p">,</span> <span class="s1">&#39;artist&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">,</span> <span class="s1">&#39;similarity&#39;</span><span class="p">,</span> <span class="s1">&#39;rank&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">distances</span><span class="p">)</span>
+    <span class="n">df_nearest</span> <span class="o">=</span> <span class="n">new_row</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">df_nearest</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span>   <span class="n">df_nearest</span></div>
+     
+<div class="viewcode-block" id="level2_knn_words"><a class="viewcode-back" href="../files/functions_knn.html#functions_knn.level2_knn_words">[docs]</a><span class="k">def</span> <span class="nf">level2_knn_words</span><span class="p">(</span><span class="n">start</span> <span class="p">,</span> <span class="n">end</span><span class="p">,</span>  <span class="n">baseline</span><span class="p">,</span>  <span class="n">dict_words</span><span class="p">,</span> <span class="n">df_cdandlp</span><span class="p">,</span> <span class="n">X_train</span><span class="p">,</span> <span class="n">vectorizer</span><span class="p">)</span> <span class="p">:</span>
+
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      </span>
+<span class="sd">    A function to run knn for a dataset of queries.</span>
+<span class="sd">    End and start for batching  dataset.</span>
+
+
+<span class="sd">    Args:</span>
+<span class="sd">       </span>
+<span class="sd">        start (int) :  1st query&#39; index </span>
+<span class="sd">        end (int) :    2nd query&#39; index</span>
+<span class="sd">        baseline (DataFrame) : discogs&#39; dataset . </span>
+<span class="sd">        dict_words (dict) : dictionary for blocking</span>
+<span class="sd">        cdandlp (DataFrame):  cdandlp datasets</span>
+
+<span class="sd">       </span>
+<span class="sd">    Returns:</span>
+<span class="sd">       </span>
+<span class="sd">        save and write a list of dataframes.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+
+    <span class="n">df_sample</span><span class="o">=</span> <span class="n">df_cdandlp</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">end</span><span class="p">]</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span> <span class="n">level1_knn_words</span><span class="p">(</span><span class="n">row_index</span><span class="p">,</span> <span class="n">df_cdandlp</span><span class="p">,</span> <span class="n">baseline</span><span class="p">,</span> <span class="n">dict_words</span><span class="p">,</span> <span class="n">X_train</span><span class="p">,</span> <span class="n">vectorizer</span><span class="p">)</span>  <span class="k">for</span> <span class="n">row_index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span> <span class="p">]</span>
+      
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">end</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;_All_words_knn.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span>  <span class="n">f1</span><span class="p">:</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">f1</span><span class="p">)</span> </div>
+
+<div class="viewcode-block" id="level1_knn_words"><a class="viewcode-back" href="../files/functions_knn.html#functions_knn.level1_knn_words">[docs]</a><span class="k">def</span> <span class="nf">level1_knn_words</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">baseline</span><span class="p">,</span> <span class="n">dict_words</span><span class="p">,</span>  <span class="n">X_train</span><span class="p">,</span><span class="n">vectorizer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A function to run the method level0_knn_words for a single querie by with blocking strategy.</span>
+
+
+<span class="sd">    Args:</span>
+<span class="sd">       </span>
+
+<span class="sd">        index (int) : row identification </span>
+<span class="sd">        df_baseline (DataFrame) : discogs data </span>
+<span class="sd">        df (pandas.DataFrame):  cdandlp datasets</span>
+<span class="sd">        dict_words (dict) : dictionary for blocking </span>
+<span class="sd">       </span>
+<span class="sd">    Returns:</span>
+<span class="sd">       </span>
+<span class="sd">        DataFrame: A table with  informations id_query&#39;, &#39;master_id&#39;, &#39;artist&#39;, &#39;title&#39;, &#39;similarity&#39;,&#39;rank&#39; , </span>
+<span class="sd">        with others text distances as hamming, levenshtein,...</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">row</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;text&#39;</span><span class="p">]</span>
+    <span class="c1"># retrieve the list of indices by word</span>
+    <span class="n">indices_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">dict_words</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span>
+    <span class="n">distances</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;levenshtein&#39;</span><span class="p">,</span> <span class="s1">&#39;jaro_winkler&#39;</span><span class="p">,</span> <span class="s1">&#39;jaccard&#39;</span><span class="p">,</span> <span class="s1">&#39;overlap&#39;</span><span class="p">,</span> <span class="s1">&#39;hamming&#39;</span><span class="p">,</span> <span class="s1">&#39;fuzzy_partial&#39;</span><span class="p">]</span>
+    <span class="k">while</span> <span class="kc">None</span> <span class="ow">in</span> <span class="n">indices_list</span><span class="p">:</span>
+        <span class="n">indices_list</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="c1"># convert the list of lists to flat list</span>
+    <span class="n">indices_list_flat</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">([</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="n">indices_list</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="n">indices_list_flat</span> <span class="o">==</span> <span class="p">[]</span> <span class="p">:</span>
+        <span class="n">new_row</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span>
+                                        <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">index</span><span class="p">,</span>  <span class="s1">&#39;n_ref&#39;</span><span class="p">],</span>
+                                        <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">index</span><span class="p">,</span>  <span class="s1">&#39;n_ref&#39;</span><span class="p">],</span> 
+                                        <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;artiste&#39;</span><span class="p">],</span>
+                                        <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;titre&#39;</span><span class="p">],</span><span class="nb">float</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span>   <span class="mi">1</span><span class="p">,</span>   <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>    <span class="mi">1</span><span class="p">,]]),</span>
+                               <span class="n">columns</span><span class="o">=</span> <span class="p">[</span><span class="s1">&#39;id_query&#39;</span><span class="p">,</span> <span class="s1">&#39;master_id&#39;</span><span class="p">,</span> <span class="s1">&#39;artist&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">,</span> <span class="s1">&#39;similarity&#39;</span><span class="p">,</span><span class="s1">&#39;rank&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">distances</span>    
+
+                            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_row</span>
+    <span class="c1"># else</span>
+    <span class="c1"># match indexes with baseline indexes</span>
+    <span class="n">df_baseline</span> <span class="o">=</span> <span class="n">baseline</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">indices_list_flat</span><span class="p">,]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">df_sample</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[[</span><span class="n">index</span><span class="p">,]]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="s1">&#39;True&#39;</span><span class="p">)</span>
+    <span class="n">df_baseline</span><span class="p">[</span><span class="s1">&#39;index&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df_baseline</span><span class="o">.</span><span class="n">index</span>
+    <span class="n">answer</span> <span class="o">=</span> <span class="n">level0_knn_words</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="n">df_sample</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="s1">&#39;text&#39;</span><span class="p">]]</span> <span class="p">,</span><span class="n">indices</span> <span class="o">=</span><span class="n">indices_list_flat</span> <span class="p">,</span><span class="n">vectorizer</span><span class="o">=</span><span class="n">vectorizer</span><span class="p">,</span> <span class="n">X_train</span><span class="o">=</span><span class="n">X_train</span><span class="p">,</span> <span class="n">baseline</span><span class="o">=</span><span class="n">df_baseline</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">sample</span> <span class="o">=</span><span class="n">df_sample</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">nb_top</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+      
+    <span class="k">return</span> <span class="n">answer</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/cdandlp_logo.png" alt="Logo"/>
+            </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">functions_knn</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Erwan BARGAIN, Salif SAWADOGO.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.2.0.
+    </div>
+  </body>
+</html>

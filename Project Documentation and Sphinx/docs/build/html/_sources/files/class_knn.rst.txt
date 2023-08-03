@@ -1,0 +1,9 @@
+Knn from scratch Class
+============================================
+This class  regroups all the methods( functions) to run the nearest neighbors  from one query to a datasets of query.
+
+knn_from_scratch
+--------------------------------------------
+.. autoclass:: class_knn.knn_from_scratch
+    :members:
+    :show-inheritance:

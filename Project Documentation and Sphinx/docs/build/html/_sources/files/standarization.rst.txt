@@ -1,0 +1,6 @@
+Text Standarization
+--------------------------
+
+.. automodule:: standarization
+    :members:
+    :show-inheritance:

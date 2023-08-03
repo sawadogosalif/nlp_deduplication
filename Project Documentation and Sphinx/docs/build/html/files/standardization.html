@@ -1,0 +1,180 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>Text Standardization &#8212; Dedoublement PoC documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/classic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+    
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <link rel="shortcut icon" href="../_static/documentation-icon.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Text’s vectorization" href="vectorization.html" />
+    <link rel="prev" title="Welcome to the functions documentation!" href="../index.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="vectorization.html" title="Text’s vectorization"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../index.html" title="Welcome to the functions documentation!"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Text Standardization</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="module-standardization">
+<span id="text-standardization"></span><h1>Text Standardization<a class="headerlink" href="#module-standardization" title="Permalink to this headline">¶</a></h1>
+<p><strong>Functions:</strong></p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#standardization.make_text_prep_func" title="standardization.make_text_prep_func"><code class="xref py py-obj docutils literal notranslate"><span class="pre">make_text_prep_func</span></code></a>(row, word_blacklist, ...)</p></td>
+<td><p>This function treats the input string by going through the following steps:</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#standardization.recode_pressage" title="standardization.recode_pressage"><code class="xref py py-obj docutils literal notranslate"><span class="pre">recode_pressage</span></code></a>(df)</p></td>
+<td><p>This standarize the pressage for cdandlp dataset</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt class="sig sig-object py" id="standardization.make_text_prep_func">
+<span class="sig-prename descclassname"><span class="pre">standardization.</span></span><span class="sig-name descname"><span class="pre">make_text_prep_func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">word_blacklist</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">regex_replace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">colonne</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/standardization.html#make_text_prep_func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#standardization.make_text_prep_func" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>This function treats the input string by going through the following steps:</dt><dd><ul class="simple">
+<li><p>Language detection</p></li>
+<li><p>Remove punctuation and special characters</p></li>
+<li><p>Tekenization</p></li>
+<li><p>Stop-word removal</p></li>
+<li><p>Stemming</p></li>
+<li><p>ASCII folding.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>row</strong> (<em>str</em>) – The input string to be treated.</p></li>
+<li><p><strong>word_blacklist</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – additional stop-word</p></li>
+<li><p><strong>regex_replace</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>) – colonne :  name of the colonne to prepare.  Default = None,If None, the input is a string.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The treated version of the string.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="standardization.recode_pressage">
+<span class="sig-prename descclassname"><span class="pre">standardization.</span></span><span class="sig-name descname"><span class="pre">recode_pressage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/standardization.html#recode_pressage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#standardization.recode_pressage" title="Permalink to this definition">¶</a></dt>
+<dd><p>This standarize the pressage for cdandlp dataset</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – cdandlp datsets for matching</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>add a column ‘pays_clean’</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/cdandlp_logo.png" alt="Logo"/>
+            </a></p>
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../index.html"
+                        title="previous chapter">Welcome to the functions documentation!</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="vectorization.html"
+                        title="next chapter">Text’s vectorization</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/files/standardization.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="vectorization.html" title="Text’s vectorization"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../index.html" title="Welcome to the functions documentation!"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Text Standardization</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Erwan BARGAIN, Salif SAWADOGO.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.2.0.
+    </div>
+  </body>
+</html>

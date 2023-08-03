@@ -1,0 +1,342 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>standardization &#8212; Dedoublement PoC documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/classic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+    
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <link rel="shortcut icon" href="../_static/documentation-icon.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">standardization</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for standardization</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">from</span> <span class="nn">unidecode</span> <span class="kn">import</span> <span class="n">unidecode</span>
+<span class="kn">import</span> <span class="nn">string</span>
+<span class="c1"># Compact Language Detector v3 is a very fast and performant algorithm by Google for language detection: more info here: https://pypi.org/project/pycld3/</span>
+<span class="c1">#import cld3</span>
+<span class="c1">#import Levenshtein</span>
+
+<span class="kn">from</span> <span class="nn">textdistance</span> <span class="kn">import</span> <span class="n">damerau_levenshtein</span><span class="p">,</span> <span class="n">jaro_winkler</span><span class="p">,</span> <span class="n">sorensen_dice</span><span class="p">,</span> <span class="n">jaccard</span><span class="p">,</span> <span class="n">overlap</span><span class="p">,</span> <span class="n">ratcliff_obershelp</span><span class="p">,</span><span class="n">hamming</span>
+<span class="kn">from</span> <span class="nn">fuzzywuzzy</span> <span class="kn">import</span> <span class="n">fuzz</span>
+<span class="c1"># Snowball stemmer was chosen in favor of Porter Stemmer which is a bit more aggressive and tends to remove too much from a word</span>
+<span class="kn">import</span> <span class="nn">nltk</span>
+<span class="kn">from</span> <span class="nn">nltk.stem.snowball</span> <span class="kn">import</span> <span class="n">SnowballStemmer</span>
+<span class="kn">from</span> <span class="nn">nltk.tokenize</span> <span class="kn">import</span> <span class="n">word_tokenize</span>
+<span class="kn">from</span> <span class="nn">nltk.corpus</span> <span class="kn">import</span> <span class="n">stopwords</span>
+<span class="n">nltk</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">&quot;punkt&quot;</span><span class="p">)</span>
+<span class="n">nltk</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">&quot;stopwords&quot;</span><span class="p">)</span>
+
+<span class="n">name_column_blacklist</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;feat&quot;</span><span class="p">,</span> <span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;featuring&quot;</span><span class="p">,</span> <span class="s2">&quot;et&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span><span class="s2">&quot;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;vs&quot;</span><span class="p">]</span>
+<span class="n">name_column_regex_replace</span> <span class="o">=</span> <span class="p">{</span><span class="sa">r</span><span class="s2">&quot;\&#39;&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;\s+&quot;</span><span class="p">:</span> <span class="s2">&quot; &quot;</span><span class="p">}</span>
+
+<span class="n">STEMMER_EN</span> <span class="o">=</span> <span class="n">SnowballStemmer</span><span class="p">(</span><span class="n">language</span><span class="o">=</span><span class="s1">&#39;english&#39;</span><span class="p">)</span>
+<span class="n">STEMMER_FR</span> <span class="o">=</span> <span class="n">SnowballStemmer</span><span class="p">(</span><span class="n">language</span><span class="o">=</span><span class="s1">&#39;french&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="make_text_prep_func"><a class="viewcode-back" href="../files/standardization.html#standardization.make_text_prep_func">[docs]</a><span class="k">def</span> <span class="nf">make_text_prep_func</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> 
+                        <span class="n">word_blacklist</span><span class="p">,</span>
+                        <span class="n">regex_replace</span><span class="p">,</span> 
+                        <span class="n">colonne</span><span class="p">:</span><span class="nb">str</span> <span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This function treats the input string by going through the following steps:</span>
+<span class="sd">        - Language detection</span>
+<span class="sd">        - Remove punctuation and special characters</span>
+<span class="sd">        - Tekenization</span>
+<span class="sd">        - Stop-word removal</span>
+<span class="sd">        - Stemming</span>
+<span class="sd">        - ASCII folding.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">      </span>
+<span class="sd">        row (str) : The input string to be treated.</span>
+<span class="sd">        word_blacklist (list[str]) : additional stop-word</span>
+<span class="sd">        regex_replace (Dict[str, str]) ::characters to remove</span>
+<span class="sd">         colonne :  name of the colonne to prepare.  Default = None,If None, the input is a string.</span>
+<span class="sd">      </span>
+<span class="sd">    Returns:</span>
+<span class="sd">      str : The treated version of the string. </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+
+    <span class="k">if</span> <span class="n">colonne</span> <span class="o">==</span> <span class="kc">None</span> <span class="p">:</span>
+      <span class="n">s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+    <span class="k">else</span> <span class="p">:</span>
+      <span class="n">s</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="n">colonne</span><span class="p">]</span>
+    
+    <span class="c1"># in the default case use the English stop-words and stemmer</span>
+    <span class="n">stemmer</span> <span class="o">=</span> <span class="n">STEMMER_EN</span>
+    <span class="n">stop_words</span> <span class="o">=</span>  <span class="n">word_blacklist</span>
+
+    
+    <span class="c1"># convert to lowercase, just to be sure :)</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    
+    <span class="c1"># check if the language is French and switch to the French</span>
+    <span class="n">s_lang</span> <span class="o">=</span> <span class="n">cld3</span><span class="o">.</span><span class="n">get_language</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">s_lang</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="s2">&quot;fr&quot;</span><span class="p">:</span>
+      <span class="n">stemmer</span> <span class="o">=</span> <span class="n">STEMMER_FR</span>
+      <span class="n">stop_words</span> <span class="o">=</span> <span class="n">word_blacklist</span>
+
+
+    <span class="c1"># remove punctuation</span>
+    <span class="n">s_clean</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="nb">str</span><span class="o">.</span><span class="n">maketrans</span><span class="p">(</span><span class="n">string</span><span class="o">.</span><span class="n">punctuation</span><span class="p">,</span> <span class="s1">&#39; &#39;</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">string</span><span class="o">.</span><span class="n">punctuation</span><span class="p">)))</span>
+
+    <span class="c1"># tokenize the string into words</span>
+    <span class="n">s_tokens</span> <span class="o">=</span> <span class="n">word_tokenize</span><span class="p">(</span><span class="n">s_clean</span><span class="p">)</span>
+
+    <span class="c1"># remove the stop-word tokens</span>
+
+    <span class="n">s_tokens_no_stop</span> <span class="o">=</span> <span class="p">[</span><span class="n">word</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">s_tokens</span> <span class="k">if</span> <span class="n">word</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stop_words</span><span class="p">]</span>
+    
+    <span class="c1"># join the stemmed tokens together and ASCII fold</span>
+    <span class="n">s_tokens_stemmed</span> <span class="o">=</span> <span class="p">[</span><span class="n">stemmer</span><span class="o">.</span><span class="n">stem</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">s_tokens_no_stop</span><span class="p">]</span>
+    <span class="n">s_ascii</span> <span class="o">=</span> <span class="n">unidecode</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">s_tokens_stemmed</span><span class="p">))</span>
+    
+    <span class="k">for</span> <span class="n">regex</span><span class="p">,</span> <span class="n">replace</span> <span class="ow">in</span> <span class="n">regex_replace</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="n">s_ascii</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">regex</span><span class="p">,</span> <span class="n">replace</span><span class="p">,</span> <span class="n">s_ascii</span><span class="p">)</span>
+
+    <span class="k">return</span><span class="p">(</span><span class="n">s_ascii</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span></div>
+    
+    
+    
+<div class="viewcode-block" id="recode_pressage"><a class="viewcode-back" href="../files/standardization.html#standardization.recode_pressage">[docs]</a><span class="k">def</span> <span class="nf">recode_pressage</span><span class="p">(</span><span class="n">df</span><span class="p">):</span>
+    
+    <span class="sd">&quot;&quot;&quot; This standarize the pressage for cdandlp dataset</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        df (DataFrame) : cdandlp datsets for matching</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        DataFrame : add a column &#39;pays_clean&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">map</span> <span class="o">=</span> <span class="p">{</span>
+          <span class="s1">&#39;Suisse&#39;</span> <span class="p">:</span> <span class="s1">&#39;Switzerland&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Swiss&#39;</span> <span class="p">:</span> <span class="s1">&#39;Switzerland&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Union Europeenne&#39;</span> <span class="p">:</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> 
+         <span class="s1">&#39;SB&#39;</span> <span class="p">:</span> <span class="s1">&#39;Solomon Islands&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Fl&#39;</span> <span class="p">:</span> <span class="s1">&#39;Liechtenstein&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Ukr&#39;</span> <span class="p">:</span> <span class="s1">&#39;Ukraine&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Ukraineaineaineaineaineaine&#39;</span> <span class="p">:</span> <span class="s1">&#39;Ukraine&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Ussrsia&#39;</span> <span class="p">:</span> <span class="s1">&#39;Ussr&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;French&#39;</span> <span class="p">:</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Francais&#39;</span> <span class="p">:</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Français&#39;</span> <span class="p">:</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Fr -&#39;</span> <span class="p">:</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Russia&#39;</span> <span class="p">:</span><span class="s1">&#39;Ussr&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;United Kingdom&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;United Kingdom&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Angleterre&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Royaume Uni&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Italie&#39;</span><span class="p">:</span> <span class="s1">&#39;Italy&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Italia&#39;</span><span class="p">:</span> <span class="s1">&#39;Italy&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Anglais&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;England&#39;</span><span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Usa&#39;</span><span class="p">:</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;U.S.A&#39;</span> <span class="p">:</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Us.&#39;</span>   <span class="p">:</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Belgique&#39;</span> <span class="p">:</span><span class="s1">&#39;Belgium&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Belge&#39;</span>  <span class="p">:</span><span class="s1">&#39;Belgium&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;España&#39;</span><span class="p">:</span> <span class="s1">&#39;Spain&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Espagne&#39;</span> <span class="p">:</span> <span class="s1">&#39;Spain&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Europerope&#39;</span> <span class="p">:</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Grèce&#39;</span> <span class="p">:</span> <span class="s1">&#39;Greece&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;U.K.&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Holland&#39;</span> <span class="p">:</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Netherlandse&#39;</span> <span class="p">:</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Deutschland&#39;</span> <span class="p">:</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;Germany.&#39;</span> <span class="p">:</span>	 <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;. Germany&#39;</span> <span class="p">:</span>	 <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;Japon&#39;</span> <span class="p">:</span> <span class="s1">&#39;Japan&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;E.U&#39;</span> <span class="p">:</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;Al&#39;</span>  <span class="p">:</span> <span class="s1">&#39;Albania&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;Eu&#39;</span> <span class="p">:</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span>
+          <span class="s1">&#39;London&#39;</span> <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Gb&#39;</span>  <span class="p">:</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;é&#39;</span>  <span class="p">:</span> <span class="s1">&#39;e&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Ru&#39;</span> <span class="p">:</span> <span class="s1">&#39;Ussr&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Nederland&#39;</span> <span class="p">:</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Netherlandse&#39;</span> <span class="p">:</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Brasil&#39;</span> <span class="p">:</span> <span class="s1">&#39;Brazil&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Bresil&#39;</span> <span class="p">:</span><span class="s1">&#39;Brazil&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Coreen&#39;</span> <span class="p">:</span> <span class="s1">&#39;South Korea&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Australiia&#39;</span> <span class="p">:</span> <span class="s1">&#39;Australia&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Australie&#39;</span> <span class="p">:</span> <span class="s1">&#39;Australia&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Pays Bas&#39;</span> <span class="p">:</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Etats Unis&#39;</span> <span class="p">:</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;United States&#39;</span> <span class="p">:</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Esp&#39;</span> <span class="p">:</span><span class="s1">&#39;Spain&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;G.B&#39;</span> <span class="p">:</span><span class="s1">&#39;Uk&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;Swe&#39;</span> <span class="p">:</span>  <span class="s1">&#39;Sweden&#39;</span><span class="p">,</span> 
+           <span class="s1">&#39;Original&#39;</span>  <span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;(Original)&#39;</span> <span class="p">:</span> <span class="s1">&#39;&#39;</span>
+    <span class="p">}</span>
+
+
+    <span class="c1">## standarized  countries&#39; Format </span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">replace</span><span class="p">({</span><span class="s1">&#39;pressage&#39;</span> <span class="p">:</span> <span class="nb">map</span><span class="p">},</span><span class="n">regex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="c1"># ++++++++++++++++++ many digits in column pressage ++++++++++++++++++++++++++++</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;\d+&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="c1"># ++++++++++++++++++ Needless words ++++++++++++++++++++++++++++</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;(Original)&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Made In&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Limited&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Press&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Biem&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Biem&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="c1"># ++++++++++++++++++ Brute recoding++++++++++++++++++++++++++++</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Europerope&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Netherlandse&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Nl&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Dutch&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Swedenden&#39;</span><span class="p">,</span> <span class="s1">&#39;Sweden&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Albanialemagn&#39;</span><span class="p">,</span> <span class="s1">&#39;Albania&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Albanial&#39;</span><span class="p">,</span> <span class="s1">&#39;Albania&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Albaniae&#39;</span><span class="p">,</span> <span class="s1">&#39;Albania&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;WesGermany&#39;</span><span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">)</span>
+    <span class="c1"># ++++++++++++++++++++ NEXT STEP ++++++++++++++++++++++++++++++++++++</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Usr&#39;</span><span class="p">,</span> <span class="s1">&#39;Ussr&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;German&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Gdr&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Bel&#39;</span> <span class="p">,</span> <span class="s1">&#39;Belgium&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;European Union&#39;</span> <span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Swedenden&#39;</span> <span class="p">,</span> <span class="s1">&#39;Sweden&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Italyn&#39;</span> <span class="p">,</span> <span class="s1">&#39;Italy&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;U.K&#39;</span> <span class="p">,</span> <span class="s1">&#39;Uk&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Netherlandsais&#39;</span> <span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Netherlandsland&#39;</span> <span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>   
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Albaniamand&#39;</span><span class="p">,</span> <span class="s1">&#39;Albania&#39;</span><span class="p">,</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Franc -&#39;</span><span class="p">,</span> <span class="s1">&#39;France -&#39;</span><span class="p">,</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Stereo Germany&#39;</span>	<span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span><span class="s1">&#39;U.S&#39;</span><span class="p">,</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span><span class="s1">&#39;Fra&#39;</span><span class="p">,</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Deutchland - Deutchland&#39;</span><span class="p">,</span> <span class="s1">&#39; Germany&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Autriche&#39;</span><span class="p">,</span> <span class="s1">&#39;Austria&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span><span class="s1">&#39;Made In Us&#39;</span><span class="p">,</span> <span class="s1">&#39;Us&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Canadien&#39;</span><span class="p">,</span> <span class="s1">&#39;Canada&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Can&#39;</span><span class="p">,</span> <span class="s1">&#39;Canada&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Pl&#39;</span><span class="p">,</span> <span class="s1">&#39;Poland&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;- Ue&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Epc&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ita&#39;</span> <span class="p">,</span> <span class="s1">&#39;Italy&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="c1"># ++++++++++++++++++++ NEXT STEP ++++++++++++++++++++++++++++++++++++</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">&#39;.()- &#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;U.S&#39;</span> <span class="p">,</span><span class="s1">&#39;Us&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Hol&#39;</span> <span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ho&#39;</span> <span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ukraineaine&#39;</span> <span class="p">,</span> <span class="s1">&#39;Ukraine&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Atl Germany&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Fr&#39;</span> <span class="p">,</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span>  <span class="s1">&#39;Ecc&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span>  <span class="s1">&#39;Eec&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Albaniagerie&#39;</span> <span class="p">,</span> <span class="s1">&#39;Albania&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ue&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;U.E&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ca&#39;</span><span class="p">,</span> <span class="s1">&#39;Canada&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Europeropa&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;The Netherlands&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Holl&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Netherland&#39;</span><span class="p">,</span> <span class="s1">&#39;Netherlands&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;France C&#39;</span><span class="p">,</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;German&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;De&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Ger&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;Atl Germany&#39;</span> <span class="p">,</span> <span class="s1">&#39;Germany&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;France Sans&#39;</span> <span class="p">,</span> <span class="s1">&#39;France&#39;</span><span class="p">,</span>  <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span>	<span class="o">==</span> <span class="s1">&#39;Türkiye&#39;</span><span class="p">,</span> <span class="s1">&#39;Turkey&#39;</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">])</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pays&#39;</span><span class="p">]</span>  <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pressage&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span> <span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">)))</span>
+        
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">REP_INTERMED</span> <span class="o">+</span> <span class="s1">&#39;list_country:.pkl&#39;</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">list_country</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>          
+
+    <span class="k">def</span> <span class="nf">recode_country</span><span class="p">(</span><span class="n">elements</span><span class="p">):</span>
+
+        <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">elements</span> <span class="p">:</span>
+            <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">in</span> <span class="n">list_country</span><span class="p">:</span>
+                <span class="k">return</span>  <span class="n">element</span>
+        <span class="k">return</span> <span class="s1">&#39;NaN&#39;</span>
+
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pays_clean&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;pays&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">recode_country</span><span class="p">)</span>
+        
+    <span class="k">return</span> <span class="n">df</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/cdandlp_logo.png" alt="Logo"/>
+            </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">standardization</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Erwan BARGAIN, Salif SAWADOGO.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.2.0.
+    </div>
+  </body>
+</html>

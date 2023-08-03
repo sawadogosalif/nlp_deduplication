@@ -1,0 +1,233 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>Knn from scratch Class &#8212; Dedoublement PoC documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/classic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css" />
+    
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <link rel="shortcut icon" href="../_static/documentation-icon.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="KNN from scratch functions" href="functions_knn.html" />
+    <link rel="prev" title="Welcome to Dedoublement’s documentation!" href="../index.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="functions_knn.html" title="KNN from scratch functions"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../index.html" title="Welcome to Dedoublement’s documentation!"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Knn from scratch Class</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="knn-from-scratch-class">
+<h1>Knn from scratch Class<a class="headerlink" href="#knn-from-scratch-class" title="Permalink to this headline">¶</a></h1>
+<p>This class  regroups all the methods( functions) to run the nearest neighbors  from one query to a datasets of query.</p>
+<section id="knn-from-scratch">
+<h2>knn_from_scratch<a class="headerlink" href="#knn-from-scratch" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="class_knn.knn_from_scratch">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">class_knn.</span></span><span class="sig-name descname"><span class="pre">knn_from_scratch</span></span><a class="headerlink" href="#class_knn.knn_from_scratch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A class to run the Nearest Neighbors by Artist + title</p>
+<p><strong>Methods:</strong></p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#class_knn.knn_from_scratch.level0_knn_words" title="class_knn.knn_from_scratch.level0_knn_words"><code class="xref py py-obj docutils literal notranslate"><span class="pre">level0_knn_words</span></code></a>(source_query, vectorizer, ...)</p></td>
+<td><p>A function to run knn for a single querie after blocking_strategy.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#class_knn.knn_from_scratch.level1_knn_words" title="class_knn.knn_from_scratch.level1_knn_words"><code class="xref py py-obj docutils literal notranslate"><span class="pre">level1_knn_words</span></code></a>(index, df, baseline, dict_words)</p></td>
+<td><p>A function to run the method level0_knn_words for a single querie by with blocking strategy.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#class_knn.knn_from_scratch.level2_knn_words" title="class_knn.knn_from_scratch.level2_knn_words"><code class="xref py py-obj docutils literal notranslate"><span class="pre">level2_knn_words</span></code></a>(start, end, baseline, ...)</p></td>
+<td><p>A function to run knn for a dataset of queries.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="class_knn.knn_from_scratch.level0_knn_words">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">level0_knn_words</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">source_query</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vectorizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X_train</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">baseline</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nb_top</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indices</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#class_knn.knn_from_scratch.level0_knn_words" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>A function to run knn for a single querie after blocking_strategy.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>source_query</strong> (<em>list</em>) – [row number , artist + title ]</p></li>
+<li><p><strong>(</strong><strong>)</strong> (<em>vectorizer</em>) – type of vectorization of text</p></li>
+<li><p><strong>X_train</strong> (<em>sparse matrix</em>) – Document-term matrix</p></li>
+<li><p><strong>baseline</strong> (<em>dict</em>) – subset of discogs dataset  after blocking.</p></li>
+<li><p><strong>sample</strong> (<em>DataFrame</em>) – a row (subset) of cdandlp</p></li>
+<li><p><strong>nb_top</strong> (<em>int</em>) – nearest neighbors</p></li>
+<li><p><strong>indices</strong> (<em>list</em>) – list of indexes  to reduce X_train dimensions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A table with  informations id_query’, ‘master_id’, ‘artist’, ‘title’, ‘similarity’,’rank’ ,</dt><dd><p>with others text distances as hamming, levenshtein,…</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="class_knn.knn_from_scratch.level1_knn_words">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">level1_knn_words</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">baseline</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dict_words</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#class_knn.knn_from_scratch.level1_knn_words" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>A function to run the method level0_knn_words for a single querie by with blocking strategy.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index</strong> (<em>int</em>) – row identification</p></li>
+<li><p><strong>df_baseline</strong> (<em>DataFrame</em>) – discogs data</p></li>
+<li><p><strong>df</strong> (<em>pandas.DataFrame</em>) – cdandlp datasets</p></li>
+<li><p><strong>dict_words</strong> (<em>dict</em>) – dictionary for blocking</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A table with  informations id_query’, ‘master_id’, ‘artist’, ‘title’, ‘similarity’,’rank’ ,</dt><dd><p>with others text distances as hamming, levenshtein,…</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="class_knn.knn_from_scratch.level2_knn_words">
+<em class="property"><span class="pre">static</span> </em><span class="sig-name descname"><span class="pre">level2_knn_words</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">baseline</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dict_words</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df_cdandlp</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#class_knn.knn_from_scratch.level2_knn_words" title="Permalink to this definition">¶</a></dt>
+<dd><p>A function to run knn for a dataset of queries.
+End and start for batching  dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start</strong> (<em>int</em>) – 1st query’ index</p></li>
+<li><p><strong>end</strong> (<em>int</em>) – 2nd query’ index</p></li>
+<li><p><strong>baseline</strong> (<em>DataFrame</em>) – discogs’ dataset .</p></li>
+<li><p><strong>dict_words</strong> (<em>dict</em>) – dictionary for blocking</p></li>
+<li><p><strong>cdandlp</strong> (<em>DataFrame</em>) – cdandlp datasets</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>save and write a list of dataframes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/cdandlp_logo.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../index.html">Table of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Knn from scratch Class</a><ul>
+<li><a class="reference internal" href="#knn-from-scratch">knn_from_scratch</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../index.html"
+                        title="previous chapter">Welcome to Dedoublement’s documentation!</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="functions_knn.html"
+                        title="next chapter">KNN from scratch functions</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/files/class_knn.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="functions_knn.html" title="KNN from scratch functions"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../index.html" title="Welcome to Dedoublement’s documentation!"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">Dedoublement PoC documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Knn from scratch Class</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2022, Erwan BARGAIN, Salif SAWADOGO.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.2.0.
+    </div>
+  </body>
+</html>
